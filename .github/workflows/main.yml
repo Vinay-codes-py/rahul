@@ -23,7 +23,7 @@ jobs:
     env:
       # ===== RDP CREDENTIALS =====
       RDP_USER: rahul
-      RDP_PASS: Rahul@Vinay_5199
+      RDP_PASS: Secure@pass_5199
 
       # ===== FIXED TAILSCALE NAME =====
       TS_HOSTNAME: rahul
