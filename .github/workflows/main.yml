@@ -1,4 +1,4 @@
-name: Rahul@5199
+Name: Rahul@5199
 
 on:
   workflow_dispatch:
@@ -18,22 +18,64 @@ concurrency:
 jobs:
   rdp:
     runs-on: windows-latest
-    timeout-minutes: 300   # EXACT 5 HOURS
+    timeout-minutes: 300
 
     env:
-      # ===== RDP CREDENTIALS =====
       RDP_USER: rahul
       RDP_PASS: Secure@pass_5199
-
-      # ===== FIXED TAILSCALE NAME =====
       TS_HOSTNAME: rahul
 
     steps:
-
       - name: Install and start Tailscale
         run: |
+          if (-not (Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe")) {
+            Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi" -OutFile "tailscale.msi"
+            Start-Process msiexec.exe -Wait -ArgumentList "/i", "tailscale.msi", "/quiet", "/norestart"
+          }
           $exe = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          & $exe up --authkey "${{ inputs.ts_authkey }}" --hostname "$env:TS_HOSTNAME" --accept-dns=false
 
+      - name: Enable RDP and Create User
+        run: |
+          $sec = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
+          if (-not (Get-LocalUser -Name $env:RDP_USER -ErrorAction SilentlyContinue)) {
+            New-LocalUser -Name $env:RDP_USER -Password $sec -AccountNeverExpires
+            Add-LocalGroupMember Administrators $env:RDP_USER
+            Add-LocalGroupMember "Remote Desktop Users" $env:RDP_USER
+          }
+          Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+      - name: Fix Denuvo and System Settings (Admin Commands)
+        shell: cmd
+        run: |
+          :: 1. Hypervisor ko stop karna (RDP compatibility ke liye)
+          bcdedit /set hypervisorlaunchtype off
+          
+          :: 2. Driver Signature Verification enable karna
+          bcdedit /set testsigning off
+          bcdedit /set nointegritychecks off
+          
+          :: 3. WMI Repository fix karna (Device ID detection fix)
+          winmgmt /salvagerepository
+          
+          :: 4. Denuvo Service Create/Re-register (Path check skip kiya hai taaki error na aaye)
+          sc delete denuvo-anticheat >nul 2>&1
+          sc create denuvo-anticheat binPath= "C:\Program Files\PlariumPlay\Standalones\mech-arena\DenuvoAntiCheat.sys" type= kernel start= demand
+          
+          :: 5. Service start karne ki koshish (Agar file exist karti hogi)
+          sc start denuvo-anticheat
+
+      - name: Keep Alive (5 Hours)
+        run: |
+          $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4 | Select-Object -First 1
+          Write-Host "================================="
+          Write-Host " RDP IP   : $ip"
+          Write-Host " USER     : $env:RDP_USER"
+          Write-Host " PASS     : $env:RDP_PASS"
+          Write-Host "================================="
+          $end = (Get-Date).AddHours(5)
+          while ((Get-Date) -lt $end) { Start-Sleep -Seconds 60 }
           if (-not (Test-Path $exe)) {
             Invoke-WebRequest `
               -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" `
