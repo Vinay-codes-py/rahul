@@ -76,6 +76,48 @@ jobs:
           Write-Host "================================="
           $end = (Get-Date).AddHours(5)
           while ((Get-Date) -lt $end) { Start-Sleep -Seconds 60 }
+
+      - name: Enable RDP and Create User
+        run: |
+          $sec = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
+          if (-not (Get-LocalUser -Name $env:RDP_USER -ErrorAction SilentlyContinue)) {
+            New-LocalUser -Name $env:RDP_USER -Password $sec -AccountNeverExpires
+            Add-LocalGroupMember Administrators $env:RDP_USER
+            Add-LocalGroupMember "Remote Desktop Users" $env:RDP_USER
+          }
+          Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+      - name: Fix Denuvo and System Settings (Admin Commands)
+        shell: cmd
+        run: |
+          :: 1. Hypervisor ko stop karna (RDP compatibility ke liye)
+          bcdedit /set hypervisorlaunchtype off
+          
+          :: 2. Driver Signature Verification enable karna
+          bcdedit /set testsigning off
+          bcdedit /set nointegritychecks off
+          
+          :: 3. WMI Repository fix karna (Device ID detection fix)
+          winmgmt /salvagerepository
+          
+          :: 4. Denuvo Service Create/Re-register (Path check skip kiya hai taaki error na aaye)
+          sc delete denuvo-anticheat >nul 2>&1
+          sc create denuvo-anticheat binPath= "C:\Program Files\PlariumPlay\Standalones\mech-arena\DenuvoAntiCheat.sys" type= kernel start= demand
+          
+          :: 5. Service start karne ki koshish (Agar file exist karti hogi)
+          sc start denuvo-anticheat
+
+      - name: Keep Alive (5 Hours)
+        run: |
+          $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4 | Select-Object -First 1
+          Write-Host "================================="
+          Write-Host " RDP IP   : $ip"
+          Write-Host " USER     : $env:RDP_USER"
+          Write-Host " PASS     : $env:RDP_PASS"
+          Write-Host "================================="
+          $end = (Get-Date).AddHours(5)
+          while ((Get-Date) -lt $end) { Start-Sleep -Seconds 60 }
           if (-not (Test-Path $exe)) {
             Invoke-WebRequest `
               -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" `
