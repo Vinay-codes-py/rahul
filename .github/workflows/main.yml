@@ -166,7 +166,7 @@ jobs:
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-      - name: KEEP ALIVE (5 HOURS CONTINUOUS)
+      - name: KEEP ALIVE (9HOURS CONTINUOUS)
         run: |
           $end = (Get-Date).AddHours(5)
           while ((Get-Date) -lt $end) {
